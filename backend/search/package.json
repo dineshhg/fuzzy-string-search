@@ -1,0 +1,25 @@
+{
+  "name": "search-poc",
+  "version": "1.0.0",
+  "description": "SQL Database Search POC in TypeScript",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "populate": "ts-node populate_database.ts",
+    "search": "ts-node search_queries.ts",
+    "test-cases": "ts-node test_search_cases.ts",
+    "start": "npm run populate && npm run search"
+  },
+  "keywords": ["search", "fuzzy-matching", "sql"],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@faker-js/faker": "^8.3.1",
+    "mysql2": "^3.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+} 
