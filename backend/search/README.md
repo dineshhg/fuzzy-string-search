@@ -62,7 +62,6 @@ This project demonstrates various search strategies for finding similar entries 
 
 ### Prerequisites
 - MySQL 5.7+ or MariaDB
-- Python 3.7+ (for Python version)
 - Node.js 16+ (for TypeScript version)
 
 ### Installation
@@ -72,42 +71,6 @@ This project demonstrates various search strategies for finding similar entries 
 cd /Users/dkumar/search-poc
 ```
 
-### For Python Version:
-
-2. Install Python dependencies:
-```bash
-pip install -r requirements.txt
-```
-
-3. Run the setup script:
-```bash
-chmod +x setup.sh
-./setup.sh
-```
-
-Or manually:
-
-```bash
-# Create database
-mysql -u root -p -e "CREATE DATABASE IF NOT EXISTS person_search_db;"
-
-# Create schema
-mysql -u root -p person_search_db < schema.sql
-
-# Update database credentials in Python files
-# Edit DB_CONFIG in populate_database.py and search_queries.py
-```
-
-4. Populate the database:
-```bash
-python populate_database.py
-```
-
-5. Run the search demo:
-```bash
-python search_queries.py
-```
-
 ### For TypeScript Version:
 
 2. Install Node.js dependencies:
@@ -115,7 +78,7 @@ python search_queries.py
 npm install
 ```
 
-3. Create the database and schema (same as Python):
+3. Create the database and schema:
 ```bash
 ./setup.sh
 # or manually create database and run schema.sql
@@ -156,11 +119,6 @@ Enter search term: Mary Ann
 ```
 
 ## Files Description
-
-### Python Implementation:
-- `populate_database.py` - Populates database with 1000 sample entries
-- `search_queries.py` - Main search implementation with all strategies
-- `requirements.txt` - Python dependencies
 
 ### TypeScript Implementation:
 - `db_config.ts` - Database configuration and type definitions
