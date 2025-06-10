@@ -57,16 +57,20 @@ export default class PersonSearch {
   }
 
   async normalizedSearch(searchTerm: string): Promise<Person[]> {
-    const normalized = this.normalizeString(searchTerm);
-    const normalizedNoApostrophe = normalized.replace("'", "");
+    // Split search term into words and create LIKE conditions
+    const searchWords = searchTerm.toLowerCase().split(/\s+/).filter(w => w.length > 0);
+    const likeConditions = searchWords.map(word => `LOWER(full_name) LIKE ?`).join(' AND ');
+    
     const query = `
       SELECT * FROM persons 
-      WHERE LOWER(REPLACE(full_name, ' ', '')) = ?
-         OR LOWER(REPLACE(full_name, ' ', '')) = ?
+      WHERE ${likeConditions}
       LIMIT 20
     `;
     
-    const [rows] = await this.connection!.execute(query, [normalized, normalizedNoApostrophe]);
+    // Create parameters array with %word% for each search word
+    const params = searchWords.map(word => `%${word}%`);
+    
+    const [rows] = await this.connection!.execute(query, params);
     return rows as Person[];
   }
 
@@ -167,6 +171,34 @@ export default class PersonSearch {
     return results.slice(0, 20);
   }
 
+  async strictLevenshteinSearch(searchTerm: string, maxDistance: number = 3): Promise<Person[]> {
+    const query = `
+      SELECT *, LEVENSHTEIN(full_name, ?) AS distance
+      FROM persons
+      HAVING distance <= ?
+      ORDER BY distance ASC
+      LIMIT 20
+    `;
+    const [rows] = await this.connection!.execute(query, [
+      searchTerm.toLowerCase(),
+      Math.min(maxDistance, Math.ceil(searchTerm.length * 0.3)),
+    ]);
+    return rows as Person[];
+  }
+
+  async strictSoundexSearch(searchTerm: string, maxDistance: number = 3): Promise<Person[]> {
+    const query = `
+      SELECT *, LEVENSHTEIN(full_name, ?) AS distance
+      FROM persons 
+      WHERE SOUNDEX(full_name) = SOUNDEX(?)
+      HAVING distance <= ?
+      ORDER BY distance ASC
+      LIMIT 20
+    `; // distance should be dynamic based on the search term length
+    const [rows] = await this.connection!.execute(query, [searchTerm, searchTerm, Math.min(maxDistance, Math.ceil(searchTerm.length * 0.3)),    ]);
+    return rows as Person[];
+  }
+
   async combinedSearch(searchTerm: string): Promise<SearchResult[]> {
     const results: Map<number, SearchResult> = new Map();
     const scores: Map<number, number> = new Map();
@@ -176,7 +208,7 @@ export default class PersonSearch {
     const exactResults = await this.exactSearch(searchTerm);
     for (const r of exactResults) {
       results.set(r.id, r);
-      scores.set(r.id, (scores.get(r.id) || 0) + 100);
+      scores.set(r.id, (scores.get(r.id) || 0) + 10);
       if (!foundBy.has(r.id)) foundBy.set(r.id, new Set());
       foundBy.get(r.id)!.add('Exact');
     }
@@ -187,46 +219,42 @@ export default class PersonSearch {
       if (!results.has(r.id)) {
         results.set(r.id, r);
       }
-      scores.set(r.id, (scores.get(r.id) || 0) + 80);
+      scores.set(r.id, (scores.get(r.id) || 0) + 8);
       if (!foundBy.has(r.id)) foundBy.set(r.id, new Set());
       foundBy.get(r.id)!.add('Normalized');
     }
     
-    // 3. Soundex search (medium priority - now stricter with first 2 chars matching)
-    const soundexResults = await this.soundexSearch(searchTerm);
-    for (const r of soundexResults) {
+    // 3. Strict Soundex search (high priority - exact soundex match)
+    const strictSoundexResults = await this.strictSoundexSearch(searchTerm, searchTerm.replace(/\s/g,'').length * 0.6);
+    for (const r of strictSoundexResults) {
       if (!results.has(r.id)) {
         results.set(r.id, r);
       }
-      // Increased score since it's more strict now
-      scores.set(r.id, (scores.get(r.id) || 0) + 70);
+      scores.set(r.id, (scores.get(r.id) || 0) + 4);
       if (!foundBy.has(r.id)) foundBy.set(r.id, new Set());
       foundBy.get(r.id)!.add('Soundex');
     }
     
-    // 4. Wildcard search (low priority)
+    // 5. Wildcard search (low priority)
     const wildcardResults = await this.wildcardSearch(searchTerm);
     for (const r of wildcardResults) {
       if (!results.has(r.id)) {
         results.set(r.id, r);
       }
-      scores.set(r.id, (scores.get(r.id) || 0) + 40);
+      scores.set(r.id, (scores.get(r.id) || 0) + 2);
       if (!foundBy.has(r.id)) foundBy.set(r.id, new Set());
       foundBy.get(r.id)!.add('Wildcard');
     }
     
-    // 5. Levenshtein search (now stricter: max distance 2 and 30% threshold)
-    const levenshteinResults = await this.levenshteinSearch(searchTerm, 2);
-    for (const r of levenshteinResults) {
+    const strictLevenshteinResults = await this.strictLevenshteinSearch(searchTerm, searchTerm.replace(/\s/g,'').length * 0.6);
+    for (const r of strictLevenshteinResults) {
       if (!results.has(r.id)) {
         results.set(r.id, r);
       }
-      // Score inversely proportional to distance
-      const distance = r.levenshtein_distance || 2;
       // Increased base score since it's more strict now
-      scores.set(r.id, (scores.get(r.id) || 0) + (40 / (distance + 1)));
+      scores.set(r.id, (scores.get(r.id) || 0) + 6);
       if (!foundBy.has(r.id)) foundBy.set(r.id, new Set());
-      foundBy.get(r.id)!.add(`Levenshtein(${distance})`);
+      foundBy.get(r.id)!.add(`Levenshtein`);
     }
     
     // Sort by score
@@ -254,12 +282,13 @@ export default class PersonSearch {
       return;
     }
     
-    console.log(`\n${'ID'.padEnd(6)} ${'Full Name'.padEnd(60)} ${'Found By'.padEnd(30)}`);
-    console.log(`${'-'.repeat(6)} ${'-'.repeat(60)} ${'-'.repeat(30)}`);
+    console.log(`\n${'ID'.padEnd(6)} ${'Full Name'.padEnd(40)} ${'Score'.padEnd(10)} ${'Found By'.padEnd(30)}`);
+    console.log(`${'-'.repeat(6)} ${'-'.repeat(40)} ${'-'.repeat(10)} ${'-'.repeat(30)}`);
     
     for (const r of results.slice(0, 10)) {
       const foundByStr = r.foundBy ? r.foundBy.join(', ') : '';
-      console.log(`${r.id.toString().padEnd(6)} ${r.full_name.padEnd(60)} ${foundByStr.padEnd(30)}`);
+      const score = r.score ? r.score.toFixed(2) : '0.00';
+      console.log(`${r.id.toString().padEnd(6)} ${r.full_name.padEnd(40)} ${score.padEnd(10)} ${foundByStr.padEnd(30)}`);
     }
   }
 
