@@ -1,0 +1,31 @@
+{
+  "name": "pg-search-poc",
+  "version": "1.0.0",
+  "description": "PostgreSQL Database Search POC in TypeScript",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "populate": "ts-node populate_database.ts",
+    "search": "ts-node search_queries.ts",
+    "test-cases": "ts-node test_search_cases.ts",
+    "start": "npm run populate && npm run search"
+  },
+  "keywords": [
+    "search",
+    "fuzzy-matching",
+    "postgresql"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@faker-js/faker": "^8.3.1",
+    "pg": "^8.11.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.5",
+    "@types/pg": "^8.10.9",
+    "prettier": "^3.5.3",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
