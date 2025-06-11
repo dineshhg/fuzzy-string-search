@@ -97,12 +97,14 @@ npm run test-cases
 
 The combined search uses weighted scoring:
 
-- Exact match: 10 points
-- Normalized match: 8 points
-- Trigram similarity: 6 × similarity score
-- Strict Levenshtein: 6 points
-- Soundex match: 4 points
-- Wildcard match: 2 points
+- Exact: 10 points
+- Normalized: 8 points
+- Trigram: 6 × similarity
+- Levenshtein: 6 points
+- DMetaphone: 5 points
+- Metaphone: 4.5 points
+- Soundex: 4 points
+- Wildcard: 2 points
 
 Results are sorted by total score, returning the best matches.
 

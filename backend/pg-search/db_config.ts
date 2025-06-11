@@ -24,4 +24,8 @@ export interface Person {
   relevance?: number;
   levenshtein_distance?: number;
   similarity?: number;
+  metaphone_code?: string; // Metaphone code
+  search_metaphone_code?: string; // Search term metaphone code
+  dm_codes?: string[]; // DMetaphone codes
+  search_dm_codes?: string[]; // Search term DM codes for comparison
 }

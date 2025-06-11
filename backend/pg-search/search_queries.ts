@@ -1,4 +1,4 @@
-import { Pool, PoolClient } from "pg";
+import { Pool } from "pg";
 import * as readline from "readline";
 import { DB_CONFIG, Person } from "./db_config";
 
@@ -27,11 +27,6 @@ export default class PersonSearch {
 
   async close(): Promise<void> {
     await this.pool.end();
-  }
-
-  normalizeString(s: string): string {
-    // Only remove spaces and convert to lowercase, keep apostrophes
-    return s.replace(/\s+/g, "").toLowerCase();
   }
 
   async exactSearch(searchTerm: string): Promise<Person[]> {
@@ -136,6 +131,155 @@ export default class PersonSearch {
     }
   }
 
+  async metaphoneSearch(searchTerm: string): Promise<Person[]> {
+    // Metaphone - phonetic matching algorithm
+    const query = `
+      SELECT *, 
+             metaphone(full_name, 10) as metaphone_code,
+             metaphone($1, 10) as search_metaphone_code
+      FROM persons 
+      WHERE metaphone(full_name, 10) = metaphone($1, 10)
+         OR metaphone(first_name, 10) = metaphone($1, 10)
+         OR metaphone(last_name, 10) = metaphone($1, 10)
+      LIMIT 20000
+    `;
+
+    try {
+      const result = await this.pool.query(query, [searchTerm]);
+      return result.rows.map((row) => ({
+        ...row,
+        metaphone_code: row.metaphone_code,
+        search_metaphone_code: row.search_metaphone_code,
+      })) as Person[];
+    } catch (error) {
+      console.warn(
+        "Metaphone search failed, falling back to soundex search:",
+        error,
+      );
+      return this.soundexSearch(searchTerm);
+    }
+  }
+
+  async strictMetaphoneSearch(
+    searchTerm: string,
+    maxDistance: number = 3,
+  ): Promise<Person[]> {
+    // Strict Metaphone search with Levenshtein distance filtering
+    const searchTermNoSpaces = searchTerm.replace(/\s/g, "");
+    const dynamicMaxDistance = Math.min(
+      maxDistance,
+      Math.ceil(searchTermNoSpaces.length * 0.6),
+    );
+
+    const query = `
+      SELECT *, 
+             levenshtein(full_name, $1) AS distance,
+             metaphone(full_name, 10) as metaphone_code
+      FROM persons 
+      WHERE metaphone(full_name, 10) = metaphone($1, 10)
+        AND levenshtein(full_name, $1) <= $2
+      ORDER BY distance ASC
+      LIMIT 20
+    `;
+
+    try {
+      const result = await this.pool.query(query, [
+        searchTerm,
+        Math.floor(dynamicMaxDistance),
+      ]);
+      return result.rows.map((row) => ({
+        ...row,
+        levenshtein_distance: row.distance,
+        metaphone_code: row.metaphone_code,
+      })) as Person[];
+    } catch (error) {
+      console.warn(
+        "Strict Metaphone search failed, falling back to regular search:",
+        error,
+      );
+      return this.metaphoneSearch(searchTerm);
+    }
+  }
+
+  async dmetaphoneSearch(searchTerm: string): Promise<Person[]> {
+    // Double Metaphone - superior phonetic matching algorithm
+    // More sophisticated than regular Metaphone, handles multiple pronunciations
+    const query = `
+      SELECT *, 
+             dmetaphone(full_name) as dm_codes,
+             dmetaphone($1) as search_dm_codes
+      FROM persons 
+      WHERE (
+        dmetaphone(full_name) = dmetaphone($1)
+        OR dmetaphone_alt(full_name) = dmetaphone($1)
+        OR dmetaphone(full_name) = dmetaphone_alt($1)
+        OR dmetaphone_alt(full_name) = dmetaphone_alt($1)
+      )
+      LIMIT 200000
+    `;
+
+    try {
+      const result = await this.pool.query(query, [searchTerm]);
+      return result.rows.map((row) => ({
+        ...row,
+        dm_codes: row.dm_codes,
+        search_dm_codes: row.search_dm_codes,
+      })) as Person[];
+    } catch (error) {
+      console.warn(
+        "Double Metaphone search failed, falling back to soundex search:",
+        error,
+      );
+      return this.soundexSearch(searchTerm);
+    }
+  }
+
+  async strictDMetaphoneSearch(
+    searchTerm: string,
+    maxDistance: number = 3,
+  ): Promise<Person[]> {
+    // Strict Double Metaphone search with Levenshtein distance filtering
+    const searchTermNoSpaces = searchTerm.replace(/\s/g, "");
+    const dynamicMaxDistance = Math.min(
+      maxDistance,
+      Math.ceil(searchTermNoSpaces.length * 0.6),
+    );
+
+    const query = `
+      SELECT *, 
+             levenshtein(full_name, $1) AS distance,
+             dmetaphone(full_name) as dm_codes
+      FROM persons 
+      WHERE (
+        dmetaphone(full_name) = dmetaphone($1)
+        OR dmetaphone_alt(full_name) = dmetaphone($1)
+        OR dmetaphone(full_name) = dmetaphone_alt($1)
+        OR dmetaphone_alt(full_name) = dmetaphone_alt($1)
+      )
+      AND levenshtein(full_name, $1) <= $2
+      ORDER BY distance ASC
+      LIMIT 20
+    `;
+
+    try {
+      const result = await this.pool.query(query, [
+        searchTerm,
+        Math.floor(dynamicMaxDistance),
+      ]);
+      return result.rows.map((row) => ({
+        ...row,
+        levenshtein_distance: row.distance,
+        dm_codes: row.dm_codes,
+      })) as Person[];
+    } catch (error) {
+      console.warn(
+        "Strict Double Metaphone search failed, falling back to regular search:",
+        error,
+      );
+      return this.dmetaphoneSearch(searchTerm);
+    }
+  }
+
   async levenshteinSearch(
     searchTerm: string,
     maxDistance: number = 2,
@@ -187,7 +331,6 @@ export default class PersonSearch {
 
     try {
       const result = await this.pool.query(query, [searchTerm, threshold]);
-      console.log(result.rows);
       return result.rows.map((row) => ({
         ...row,
         similarity: row.sim,
@@ -341,10 +484,6 @@ export default class PersonSearch {
       maxDistance,
       Math.ceil(searchTermNoSpaces.length * 0.6),
     );
-    console.log(
-      "🚀 > PersonSearch > strictLevenshteinSearch > dynamicMaxDistance:",
-      dynamicMaxDistance,
-    );
 
     const query = `
       SELECT *, levenshtein(full_name, $1) AS distance
@@ -457,6 +596,28 @@ export default class PersonSearch {
       foundBy.get(r.id)!.add("Soundex");
     }
 
+    // 4.2. Metaphone search (medium priority - phonetic matching)
+    const metaphoneResults = await this.strictMetaphoneSearch(searchTerm);
+    for (const r of metaphoneResults) {
+      if (!results.has(r.id)) {
+        results.set(r.id, r);
+      }
+      scores.set(r.id, (scores.get(r.id) || 0) + 4.5);
+      if (!foundBy.has(r.id)) foundBy.set(r.id, new Set());
+      foundBy.get(r.id)!.add("Metaphone");
+    }
+
+    // 4.5. DMetaphone search (medium-high priority - advanced phonetic matching)
+    const dmetaphoneResults = await this.strictDMetaphoneSearch(searchTerm);
+    for (const r of dmetaphoneResults) {
+      if (!results.has(r.id)) {
+        results.set(r.id, r);
+      }
+      scores.set(r.id, (scores.get(r.id) || 0) + 5);
+      if (!foundBy.has(r.id)) foundBy.set(r.id, new Set());
+      foundBy.get(r.id)!.add("DMetaphone");
+    }
+
     // 5. Wildcard search (low priority)
     const wildcardResults = await this.wildcardSearch(searchTerm);
     for (const r of wildcardResults) {
@@ -551,6 +712,60 @@ export default class PersonSearch {
       console.log(`  "${term}": ${termResult.rows[0].soundex}`);
     }
   }
+
+  async debugMetaphone(
+    searchTerm: string,
+    compareTerms: string[],
+  ): Promise<void> {
+    console.log("\n--- Metaphone Debug ---");
+    console.log(`Search term: "${searchTerm}"`);
+
+    // Get metaphone of search term
+    const searchResult = await this.pool.query(
+      "SELECT metaphone($1, 10) as metaphone_code",
+      [searchTerm],
+    );
+    console.log(
+      `Metaphone code of "${searchTerm}": ${searchResult.rows[0].metaphone_code}`,
+    );
+
+    console.log("\nComparing with:");
+    for (const term of compareTerms) {
+      const termResult = await this.pool.query(
+        "SELECT metaphone($1, 10) as metaphone_code",
+        [term],
+      );
+      console.log(`  "${term}": ${termResult.rows[0].metaphone_code}`);
+    }
+  }
+
+  async debugDMetaphone(
+    searchTerm: string,
+    compareTerms: string[],
+  ): Promise<void> {
+    console.log("\n--- DMetaphone Debug ---");
+    console.log(`Search term: "${searchTerm}"`);
+
+    // Get DMetaphone codes of search term
+    const searchResult = await this.pool.query(
+      "SELECT dmetaphone($1) as dm_codes",
+      [searchTerm],
+    );
+    console.log(
+      `DMetaphone codes of "${searchTerm}": ${JSON.stringify(searchResult.rows[0].dm_codes)}`,
+    );
+
+    console.log("\nComparing with:");
+    for (const term of compareTerms) {
+      const termResult = await this.pool.query(
+        "SELECT dmetaphone($1) as dm_codes",
+        [term],
+      );
+      console.log(
+        `  "${term}": ${JSON.stringify(termResult.rows[0].dm_codes)}`,
+      );
+    }
+  }
 }
 
 async function runTestSearches(): Promise<void> {
@@ -613,6 +828,20 @@ async function runTestSearches(): Promise<void> {
       console.log(`Soundex Search found ${soundexResults.length} results`);
     }
 
+    // Metaphone search (phonetic matching)
+    const metaphoneResults = await search.metaphoneSearch(searchTerm);
+    if (metaphoneResults.length > 0) {
+      console.log(`Metaphone Search found ${metaphoneResults.length} results`);
+    }
+
+    // DMetaphone search (advanced phonetic matching)
+    const dmetaphoneResults = await search.dmetaphoneSearch(searchTerm);
+    if (dmetaphoneResults.length > 0) {
+      console.log(
+        `DMetaphone Search found ${dmetaphoneResults.length} results`,
+      );
+    }
+
     // Levenshtein search
     const levResults = await search.levenshteinSearch(searchTerm);
     if (levResults.length > 0) {
@@ -638,6 +867,12 @@ async function interactiveSearch(): Promise<void> {
   console.log(
     "Type 'debug soundex <term1> <term2> ...' to debug soundex values",
   );
+  console.log(
+    "Type 'debug metaphone <term1> <term2> ...' to debug metaphone codes",
+  );
+  console.log(
+    "Type 'debug dmetaphone <term1> <term2> ...' to debug DMetaphone codes",
+  );
 
   const rl = readline.createInterface({
     input: process.stdin,
@@ -657,7 +892,7 @@ async function interactiveSearch(): Promise<void> {
           return;
         }
 
-        // Check for debug command
+        // Check for debug commands
         if (trimmedInput.toLowerCase().startsWith("debug soundex ")) {
           const terms = trimmedInput
             .substring(14)
@@ -666,6 +901,24 @@ async function interactiveSearch(): Promise<void> {
           if (terms.length > 0) {
             const [searchTerm, ...compareTerms] = terms;
             await search.debugSoundex(searchTerm, compareTerms);
+          }
+        } else if (trimmedInput.toLowerCase().startsWith("debug metaphone ")) {
+          const terms = trimmedInput
+            .substring(16)
+            .split(" ")
+            .filter((t) => t.length > 0);
+          if (terms.length > 0) {
+            const [searchTerm, ...compareTerms] = terms;
+            await search.debugMetaphone(searchTerm, compareTerms);
+          }
+        } else if (trimmedInput.toLowerCase().startsWith("debug dmetaphone ")) {
+          const terms = trimmedInput
+            .substring(17)
+            .split(" ")
+            .filter((t) => t.length > 0);
+          if (terms.length > 0) {
+            const [searchTerm, ...compareTerms] = terms;
+            await search.debugDMetaphone(searchTerm, compareTerms);
           }
         } else if (trimmedInput) {
           // Use combined search for best results
