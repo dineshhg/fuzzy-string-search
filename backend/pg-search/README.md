@@ -1,6 +1,6 @@
 ## PostgreSQL Fuzzy String Search POC
 
-This is a comprehensive fuzzy string search implementation using PostgreSQL with advanced text search capabilities. It includes both TypeScript and Python implementations with multiple search algorithms optimized for PostgreSQL.
+This is a comprehensive fuzzy string search implementation using PostgreSQL with advanced text search capabilities. It includes both TypeScript implementations with multiple search algorithms optimized for PostgreSQL.
 
 ## Setup
 
@@ -8,7 +8,6 @@ This is a comprehensive fuzzy string search implementation using PostgreSQL with
 
 - PostgreSQL 12+ (with pg_trgm and fuzzystrmatch extensions)
 - Node.js 16+ (for TypeScript version)
-- Python 3.8+ (for Python version)
 
 ### Installation
 
@@ -55,34 +54,6 @@ npm run search
 ```bash
 npm run test-cases
 # or: npx ts-node test_search_cases.ts
-```
-
-### For Python Version:
-
-2. Install Python dependencies:
-
-```bash
-pip install -r requirements.txt
-```
-
-3. Create the database and schema (if not done already):
-
-```bash
-./setup.sh
-```
-
-4. Update database credentials in the Python files
-
-5. Populate the database:
-
-```bash
-python populate_database.py
-```
-
-6. Run the search demo:
-
-```bash
-python search_queries.py
 ```
 
 ## PostgreSQL-Specific Features
@@ -171,12 +142,6 @@ debug soundex Mary Ann MaryAnn
 - `test_search_cases.ts` - Test validation script
 - `package.json` - Node.js dependencies (pg, @faker-js/faker)
 - `tsconfig.json` - TypeScript configuration
-
-### Python Implementation:
-
-- `search_queries.py` - Python implementation using psycopg2
-- `populate_database.py` - Python database population script
-- `requirements.txt` - Python dependencies (psycopg2-binary, faker)
 
 ### Common Files:
 
